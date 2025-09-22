@@ -2,14 +2,17 @@
 # Siver微信机器人 siver_wxbot
 # 作者：https://siver.top
 
-ver = "V2.0.0"         # 当前版本
-ver_log = "日志：全新版本2.0，支持最新wxauto V2"    # 日志
+ver = "V2.1.0"         # 当前版本
+ver_log = "日志：V2.1版本，新增接口支持，Openai ADK、Dify、扣子接口现在均支持使用"    # 日志
 import time
 import json
 import re
 import traceback
 import email_send
 from openai import OpenAI
+import requests
+from cozepy import COZE_CN_BASE_URL # 扣子官方python库
+from cozepy import Coze, TokenAuth, Message, ChatStatus, MessageContentType, ChatEventType
 from datetime import datetime, timedelta
 from wxauto import WeChat
 from wxauto.msgs import *
@@ -204,8 +207,25 @@ def split_long_text(text, chunk_size=2000):
     # 通过列表推导式循环截取每个分段
     return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
 
+
+def API_chat(message, model, stream, prompt):
+    """
+    根据配置的api_sdk来选择调用API
+    """
+    if config.get('api_sdk') == 'OpenAI SDK':
+        print("使用OpenAI SDK接口")
+        return deepseek_chat(message, model, stream, prompt)
+    elif config.get('api_sdk') == 'Dify':
+        print("使用Dify API接口")
+        return DifyAPI(config).chat(message, model, stream, prompt)
+    elif config.get('api_sdk') == 'Coze':
+        print("使用Coze API接口")
+        return CozeAPI(config).chat(message, model, stream, prompt)
+    else:
+        print("未配置API SDK，默认采用Openai SDK")
+        return deepseek_chat(message, model, stream, prompt)
 # -------------------------------
-# DeepSeek API 调用
+# Openai API 调用
 # -------------------------------
 
 def deepseek_chat(message, model, stream, prompt):
@@ -265,7 +285,170 @@ def deepseek_chat(message, model, stream, prompt):
         output = response.choices[0].message.content  # 获取回复内容
         print(output)  # 打印回复
         return output  # 返回回复内容
+class DifyAPI:
+    """Dify API 交互类"""
+    def __init__(self, config):
+        self.config = config
+        self.DS_NOW_MOD = config.get('model1')  # 默认使用模型1
+        self.api_key = "Bearer " + config.get('api_key')
+        self.base_url = config.get('base_url')
+        # self.client = OpenAI(api_key=config.api_key, base_url=config.base_url)
 
+    def chat(self, message, model=None, stream=True, prompt=None):
+        """
+        调用 Dify API 获取对话回复
+        """
+        # print("=== 简单文本对话 ===")
+        response = self.run_dify_conversation(
+            query=message,
+            response_mode="blocking"
+        )
+        
+        if "event" in response and response["event"] == "message":
+            result = self.handle_blocking_response(response)
+            print(f"🤖 AI回复: {result['answer']}")
+            print(f"会话ID: {result['conversation_id']}")
+            return result['answer']
+        else:
+            print("ERROR", message=f"❌ 错误: {response.get('error', 'Unknown error')}")
+            return "API返回错误，请稍后再试"
+
+    def handle_blocking_response(self, response_data):
+        """
+        处理阻塞模式(blocking)的响应
+        """
+        if response_data.get("event") == "message":
+            return {
+                "success": True,
+                "conversation_id": response_data.get("conversation_id"),
+                "answer": response_data.get("answer", ""),
+                "message_id": response_data.get("message_id"),
+                "metadata": response_data.get("metadata", {}),
+                "usage": response_data.get("usage", {}),
+                "retriever_resources": response_data.get("retriever_resources", [])
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"Unexpected event type: {response_data.get('event')}",
+                "raw_response": response_data
+            }
+    def run_dify_conversation(self,
+        query=str,
+        inputs={},
+        conversation_id=None,
+        files=[],
+        auto_generate_name=True,
+        response_mode="blocking"
+    ):
+        """
+        执行Dify对话工作流API，严格遵循官方文档规范
+        官方文档：https://docs.dify.ai/api/chat-messages
+        
+        :param query: 用户输入/提问内容
+        :param inputs: App定义的变量值
+        :param conversation_id: 会话ID（用于多轮对话）
+        :param files: 文件列表（支持Vision能力）
+        :param auto_generate_name: 是否自动生成标题
+        :param response_mode: 响应模式（blocking/streaming）
+        :return: API响应数据
+        """
+        # API端点
+        # url = "http://121.37.67.153:8088/v1/chat-messages"
+        url = self.base_url
+        # 设置请求头
+        headers = {
+            "Authorization": self.api_key,
+            "Content-Type": "application/json"
+        }
+        
+        # 构建符合文档要求的请求体
+        payload = {
+            "inputs": inputs,
+            "query": query,
+            "response_mode": response_mode,
+            "user": "api-user",  # 用户标识
+            "conversation_id": conversation_id,
+            "auto_generate_name": auto_generate_name
+        }
+        
+        # 添加文件参数（如果提供）
+        if files:
+            payload["files"] = files
+        
+        try:
+            # 发送请求
+            response = requests.post(url, headers=headers, json=payload)
+            response.raise_for_status()  # 检查HTTP错误
+            
+            # 解析响应
+            if response_mode == "blocking":
+                return response.json()
+            else:
+                # 流式响应需要特殊处理（此处只返回原始响应）
+                return {"raw_stream": response.text}
+                
+        except requests.exceptions.RequestException as e:
+            # 详细的错误处理
+            error_info = {
+                "error_type": "request_error",
+                "message": str(e)
+            }
+            
+            if e.response is not None:
+                try:
+                    error_data = e.response.json()
+                    error_info.update({
+                        "status_code": e.response.status_code,
+                        "error_code": error_data.get("code", "unknown"),
+                        "api_message": error_data.get("message", "No error details")
+                    })
+                except:
+                    error_info["response_text"] = e.response.text
+                    
+            return {"success": False, "error": error_info}
+class CozeAPI:
+    """Coze API 交互类"""
+    def __init__(self, config):
+        self.config = config
+        self.DS_NOW_MOD = config.get('model1')  # 默认使用模型1
+        self.bot_id = config.get('model1') # 在 Coze 中创建一个机器人实例，从网页链接中复制最后一个数字作为机器人的 ID 。
+        self.user_id = "SiverWxBot" # 机器人用户标识
+        self.api_key = config.get('api_key')
+        self.base_url = COZE_CN_BASE_URL # 采用扣子官方定义api地址
+        # self.client = OpenAI(api_key=config.api_key, base_url=config.base_url)
+        self.coze = Coze(auth=TokenAuth(token=self.api_key), base_url=self.base_url) # 实例化扣子api对象
+
+    def chat(self, message, model=None, stream=True, prompt=None):
+        """
+        调用 Coze API 获取对话回复
+        """
+        # 调用 coze.chat.stream 方法来创建一个聊天。该 create 方法属于流式传输类型。
+        # 聊天，并将返回一个聊天迭代器。开发人员应使用该迭代器进行迭代以获取……
+        # 记录聊天事件并进行处理。
+        chunk_message = ""
+        try:
+            for event in self.coze.chat.stream(
+                bot_id=self.bot_id,
+                user_id=self.user_id+str(time.time()),
+                additional_messages=[
+                    Message.build_user_question_text(message),
+                ],
+            ):
+                if event.event == ChatEventType.CONVERSATION_MESSAGE_DELTA:
+                    # print(event.message.content, end="", flush=True)
+                    chunk_message += event.message.content # 拼接流式回答
+                    
+
+                if event.event == ChatEventType.CONVERSATION_CHAT_COMPLETED:
+                    # print()
+                    print(f"token消耗:{event.chat.usage.token_count}")
+
+            print(f"扣子回复：{chunk_message}")
+            return chunk_message
+        except Exception as e:
+            print(level="ERROR", message=f"❌ 调用Coze接口错误: {e}")
+            return "API返回错误，请稍后再试"
 
 # -------------------------------
 # 微信机器人逻辑
@@ -314,7 +497,7 @@ def wx_send_ai(chat, message):
     # 默认：回复 AI 生成的消息
     # chat.SendMsg("已接收，请耐心等待回答")
     try:
-        reply = deepseek_chat(message.content, DS_NOW_MOD, stream=True, prompt=prompt)
+        reply = API_chat(message.content, DS_NOW_MOD, stream=True, prompt=prompt)
     except Exception:
         print(traceback.format_exc())
         reply = "API返回错误，请稍后再试"
@@ -395,7 +578,7 @@ def process_message(chat, message):
             content_without_at = re.sub(AtMe, "", message.content).strip()
             print(now_time()+f"群组 {chat.who} 消息：",content_without_at)
             try:
-                reply = deepseek_chat(content_without_at, DS_NOW_MOD, stream=True, prompt=prompt)
+                reply = API_chat(content_without_at, DS_NOW_MOD, stream=True, prompt=prompt)
             except Exception:
                 print(traceback.format_exc())
                 reply = "请稍后再试"
@@ -576,12 +759,11 @@ def main():
         print("初始化微信监听器失败，请检查微信是否启动登录正确")
         run_flag = False
 
-    
-    wait_time = 1  # 每1秒检查一次新消息
+    wait_time = 100  
     check_interval = 10  # 每10次循环检查一次进程状态
     check_counter = 0
     print(now_time()+'siver_wxbot初始化完成，开始监听消息(作者:https://siver.top)')
-    wx.SendMsg('siver_wxbot初始化完成', who=cmd)
+    # wx.SendMsg('siver_wxbot初始化完成', who=cmd)
     # 主循环：保持运行
     while run_flag:
         time.sleep(wait_time)  # 等待1秒

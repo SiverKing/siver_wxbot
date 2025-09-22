@@ -1,3 +1,5 @@
 wxauto
 openai
 pywin32
+requests
+cozepy

@@ -181,19 +181,20 @@ class ConfigEditor:
     def create_field(self, parent, key, value):
         """
         根据配置项字段名创建对应的输入组件
-        处理逻辑：
-            - 对于“监听用户列表”、“监听群组列表”：创建可编辑列表控件
-            - 对于“prompt”：创建多行文本输入框
-            - 对于“群机器人开关”：创建开关控件
-            - 对于包含“api”或“备忘录”的字段：创建加密（隐藏输入）文本框
-            - 其他字段：创建普通文本输入框
         """
+        # ✅ 不显示 api_sdk_list
+        if key == "api_sdk_list":
+            return None  
+
         field_frame = ttk.Frame(parent)
         field_frame.pack(fill=tk.X, pady=5)
         label = ttk.Label(field_frame, text=f"{key}:", width=20)
         label.pack(side=tk.LEFT)
-        
-        if key in ["监听用户列表", "监听群组列表"]:
+
+        if key == "api_sdk":
+            sdk_list = self.config.get("api_sdk_list", [])
+            widget = self.create_combobox_field(field_frame, key, value, sdk_list)
+        elif key in ["监听用户列表", "监听群组列表"]:
             widget = self.create_list_field(field_frame, key, value)
         elif key == "prompt":
             widget = self.create_multiline_field(field_frame, value)
@@ -203,9 +204,10 @@ class ConfigEditor:
             widget = self.create_secret_field(field_frame, key, value)
         else:
             widget = self.create_text_field(field_frame, key, value)
-        
+
         self.add_help_tooltip(field_frame, key)
         return widget
+
     
     def add_help_tooltip(self, parent, key):
         """在输入组件旁添加问号图标，鼠标悬停时显示该配置项的说明"""
@@ -257,7 +259,57 @@ class ConfigEditor:
         )
         switch.pack(side=tk.LEFT)
         return var
-    
+    def create_field(self, parent, key, value):
+        """
+        根据配置项字段名创建对应的输入组件
+        """
+        field_frame = ttk.Frame(parent)
+        field_frame.pack(fill=tk.X, pady=5)
+        label = ttk.Label(field_frame, text=f"{key}:", width=20)
+        label.pack(side=tk.LEFT)
+
+        # 特殊处理 api_sdk 下拉框
+        if key == "api_sdk":
+            sdk_list = self.config.get("api_sdk_list", [])
+            widget = self.create_combobox_field(field_frame, key, value, sdk_list)
+        elif key == "api_sdk_list":
+            # 直接显示为只读，不让编辑
+            widget = self.create_list_field(field_frame, key, value)
+            widget.config(state=tk.DISABLED)
+        elif key in ["监听用户列表", "监听群组列表"]:
+            widget = self.create_list_field(field_frame, key, value)
+        elif key == "prompt":
+            widget = self.create_multiline_field(field_frame, value)
+        elif key == "群机器人开关":
+            widget = self.create_switch_field(field_frame, key, value)
+        elif "api" in key.lower() or "备忘录" in key:
+            widget = self.create_secret_field(field_frame, key, value)
+        else:
+            widget = self.create_text_field(field_frame, key, value)
+
+        self.add_help_tooltip(field_frame, key)
+        return widget
+
+    def create_combobox_field(self, parent, key, value, values):
+        """创建下拉选择框"""
+        combobox = ttk.Combobox(
+            parent,
+            values=values,
+            state="readonly",
+            width=37
+        )
+
+        # ✅ 启动/加载时，强制设置显示值
+        if value and value in values:
+            combobox.set(value)   # 显示配置文件里的值
+        elif values:  
+            combobox.set(values[0])  # 如果配置里的值不在候选项里，默认第一个
+        else:
+            combobox.set("")  # 候选项为空时保持空
+
+        combobox.pack(side=tk.LEFT, expand=True)
+        return combobox
+
     def create_list_field(self, parent, key, value):
         """
         创建可编辑列表控件，用于“监听用户列表”和“监听群组列表”
@@ -309,19 +361,17 @@ class ConfigEditor:
         return text
     
     def load_config(self):
-        """
-        加载配置文件：
-            1. 如果配置文件不存在，则创建默认配置；
-            2. 读取 JSON 数据，并根据各配置项生成对应的UI组件。
-        """
         try:
             # 清空旧有的配置项控件
             for widget in self.scrollable_frame.winfo_children():
                 widget.destroy()
+
             if not os.path.exists(CONFIG_FILE):
-                # 默认配置字典（新版配置格式）
+                # 默认配置字典
                 base_config = {
                     "鼠标放在？？上查看提示": "鼠标放在？？上查看提示",
+                    "api_sdk_list": ["OpenAI SDK", "Dify", "Coze"],  # ✅ 永远存在
+                    "api_sdk": "Coze",
                     "api_key": "your-api-key",
                     "base_url": "https://api.example.com/v1",
                     "model1": "模型名称1",
@@ -335,17 +385,21 @@ class ConfigEditor:
                     "监听群组列表": [],
                     "群机器人开关": "False",
                     "备忘录1": "备忘信息1",
-                    "备忘录2": "备忘信息2"
+                    "备忘录2": "备忘信息2",
                 }
                 with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                     json.dump(base_config, f, ensure_ascii=False, indent=4)
                 messagebox.showinfo("提示", f"已创建默认配置文件：\n{os.path.abspath(CONFIG_FILE)}\n请根据需求修改配置")
+
             # 读取配置文件
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 self.config = json.load(f)
-            # 根据配置文件生成各项UI输入控件
+
+            # ✅ 跳过 api_sdk_list，不显示在UI
             self.fields = {}
             for key, value in self.config.items():
+                if key == "api_sdk_list":  # 不显示
+                    continue
                 self.fields[key] = self.create_field(self.scrollable_frame, key, value)
         except json.JSONDecodeError:
             messagebox.showerror("配置文件错误", "配置文件格式不正确，请检查JSON语法")
@@ -353,11 +407,6 @@ class ConfigEditor:
             messagebox.showerror("加载错误", f"加载配置失败: {str(e)}\n{traceback.format_exc()}")
     
     def save_config(self):
-        """
-        保存当前配置：
-            遍历各UI组件，获取用户输入的最新值，
-            保存为 JSON 格式写回配置文件，并刷新界面。
-        """
         try:
             new_config = {}
             for key, widget in self.fields.items():
@@ -367,8 +416,14 @@ class ConfigEditor:
                     new_config[key] = "True" if widget.get() else "False"
                 elif isinstance(widget, tk.Text):
                     new_config[key] = widget.get("1.0", tk.END).strip()
+                elif isinstance(widget, ttk.Combobox):
+                    new_config[key] = widget.get()
                 else:
                     new_config[key] = widget.get()
+
+            # ✅ 永远保留 api_sdk_list
+            new_config["api_sdk_list"] = self.config.get("api_sdk_list", ["OpenAI SDK", "Dify", "Coze"])
+
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump(new_config, f, ensure_ascii=False, indent=4)
             messagebox.showinfo("成功", "配置已保存，建议重启机器人以生效")
