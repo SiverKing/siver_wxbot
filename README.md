@@ -5,7 +5,8 @@
 如需更多功能、更好的性能效率、高阶版本，请查看此篇文章：[基于wxauto(x)的UI面板](https://blog.siverking.online/index.php/archives/7/)  
 如需更好的wxauto体验，请前往链接中的群内询问交流wxauto(x)或plus ![群链接](https://plus.wxauto.org/images/group_qrcode.png)  
 本作控制微信的最新源码在`wxbot_preview.py`，`main.py`为主程序UI界面加机器人线程控制源码.   
-本作作者:https://siver.top
+接口对接方面支持所有兼容`OpenAI SDK`标准接口的AI平台、`Dify API`接口、`扣子Coze`接口。  
+本作作者:https://www.siver.top
 
 ---
 
