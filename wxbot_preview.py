@@ -310,7 +310,7 @@ class DifyAPI:
             print(f"会话ID: {result['conversation_id']}")
             return result['answer']
         else:
-            print("ERROR", message=f"❌ 错误: {response.get('error', 'Unknown error')}")
+            print(f"❌ 错误: {response.get('error', 'Unknown error')}")
             return "API返回错误，请稍后再试"
 
     def handle_blocking_response(self, response_data):
