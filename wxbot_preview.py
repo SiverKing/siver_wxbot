@@ -2,8 +2,8 @@
 # Siver微信机器人 siver_wxbot
 # 作者：https://siver.top
 
-ver = "V2.1.0"         # 当前版本
-ver_log = "日志：V2.1版本，新增接口支持，Openai ADK、Dify、扣子接口现在均支持使用"    # 日志
+ver = "V2.1.1"         # 当前版本
+ver_log = "日志：V2.1.1 fix：修复dify接口报错后的print报错"    # 日志
 import time
 import json
 import re
