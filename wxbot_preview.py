@@ -2,8 +2,8 @@
 # Siver微信机器人 siver_wxbot
 # 作者：https://siver.top
 
-ver = "V2.1.1"         # 当前版本
-ver_log = "日志：V2.1.1 fix：修复dify接口报错后的print报错"    # 日志
+ver = "V2.1.2"         # 当前版本
+ver_log = "日志：V2.1.2 fix：coze Message 类型重命名防止冲突"    # 日志
 import time
 import json
 import re
@@ -12,7 +12,7 @@ import email_send
 from openai import OpenAI
 import requests
 from cozepy import COZE_CN_BASE_URL # 扣子官方python库
-from cozepy import Coze, TokenAuth, Message, ChatStatus, MessageContentType, ChatEventType
+from cozepy import Coze, TokenAuth, Message as CozeMessage, ChatStatus, MessageContentType, ChatEventType
 from datetime import datetime, timedelta
 from wxauto import WeChat
 from wxauto.msgs import *
@@ -432,7 +432,7 @@ class CozeAPI:
                 bot_id=self.bot_id,
                 user_id=self.user_id+str(time.time()),
                 additional_messages=[
-                    Message.build_user_question_text(message),
+                    CozeMessage.build_user_question_text(message),
                 ],
             ):
                 if event.event == ChatEventType.CONVERSATION_MESSAGE_DELTA:
