@@ -1,5 +1,6 @@
 # Siver微信机器人
 
+适用于`3.9.12`微信
 [点击查看效果展示截图](./README_img.md)   
 使用开源版`wxauto`实现 | `wxauto`作者仓库: [cluic/wxauto](https://github.com/cluic/wxauto)  
 如需更多功能、更好的性能效率、高阶版本，请查看此篇文章：[基于wxauto(x)的UI面板](https://blog.siverking.online/index.php/archives/7/)  
